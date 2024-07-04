@@ -13,8 +13,9 @@ pub use credentials::{from_file, from_json};
 
 pub type BoxSource = Box<dyn Source + Send + Sync + 'static>;
 
+#[async_trait::async_trait]
 pub trait Source {
-    fn token(&self) -> crate::Result<Token>;
+    async fn token(&self) -> crate::Result<Token>;
 }
 
 // Looks for credentials in the following places, preferring the first location found:

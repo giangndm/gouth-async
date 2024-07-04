@@ -38,12 +38,13 @@ pub struct User {
     refresh_token: String,
 }
 
+#[async_trait::async_trait]
 impl Source for Credentials {
-    fn token(&self) -> crate::Result<Token> {
+    async fn token(&self) -> crate::Result<Token> {
         use Credentials::*;
         match self {
-            ServiceAccount(sa) => jwt::token(&sa),
-            User(user) => oauth2::token(&user),
+            ServiceAccount(sa) => jwt::token(&sa).await,
+            User(user) => oauth2::token(&user).await,
         }
     }
 }
@@ -102,8 +103,8 @@ pub fn from_file(path: impl AsRef<Path>, scopes: &[String]) -> crate::Result<Cre
 }
 
 #[inline]
-fn httpc_post(url: &str) -> attohttpc::RequestBuilder {
-    attohttpc::post(url).header_append(attohttpc::header::USER_AGENT, USER_AGENT)
+fn httpc_post(url: &str) -> surf::RequestBuilder {
+    surf::post(url).header("User-Agent", USER_AGENT)
 }
 
 mod jwt {
@@ -148,7 +149,7 @@ mod jwt {
 
     const DEFAULT_EXPIRE: u64 = 60 * 60;
 
-    pub fn token(sa: &ServiceAccount) -> crate::Result<Token> {
+    pub async fn token(sa: &ServiceAccount) -> crate::Result<Token> {
         let iat = issued_at();
         let claims = Claims {
             iss: &sa.client_email,
@@ -161,15 +162,16 @@ mod jwt {
         let key = EncodingKey::from_rsa_pem(sa.private_key.as_bytes())?;
         let assertion = &encode(&header, &claims, &key)?;
 
-        let mut req = httpc_post(&sa.token_uri)
-            .form(&Payload {
+        let req = httpc_post(&sa.token_uri).body(
+            surf::Body::from_form(&Payload {
                 grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
                 assertion,
-            })?
-            .prepare();
-        let resp = req.send()?;
-        if resp.is_success() {
-            let resp = TokenResponse::try_from(resp.text()?.as_ref())?;
+            })
+            .expect("Should create form"),
+        );
+        let mut resp = req.send().await?;
+        if resp.status().is_success() {
+            let resp = TokenResponse::try_from(resp.body_string().await?.as_ref())?;
             Token::try_from(resp)
         } else {
             Err(crate::ErrorKind::HttpStatus(resp.status()).into())
@@ -197,24 +199,25 @@ mod oauth2 {
     const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
     const GRANT_TYPE: &str = "refresh_token";
 
-    pub fn token(user: &User) -> crate::Result<Token> {
-        fetch_token(TOKEN_URL, user)
+    pub async fn token(user: &User) -> crate::Result<Token> {
+        fetch_token(TOKEN_URL, user).await
     }
 
-    pub(super) fn fetch_token(url: &str, user: &User) -> crate::Result<Token> {
-        let mut req = httpc_post(url)
-            .form(&Payload {
+    pub(super) async fn fetch_token(url: &str, user: &User) -> crate::Result<Token> {
+        let req = httpc_post(url).body(
+            surf::Body::from_form(&Payload {
                 client_id: &user.client_id,
                 client_secret: &user.client_secret,
                 grant_type: GRANT_TYPE,
                 // The reflesh token is not included in the response from google's server,
                 // so it always uses the specified refresh token from the file.
                 refresh_token: &user.refresh_token,
-            })?
-            .prepare();
-        let resp = req.send()?;
-        if resp.is_success() {
-            let resp = TokenResponse::try_from(resp.text()?.as_ref())?;
+            })
+            .expect("Should convert to body form"),
+        );
+        let mut resp = req.send().await?;
+        if resp.status().is_success() {
+            let resp = TokenResponse::try_from(resp.body_string().await?.as_ref())?;
             Token::try_from(resp)
         } else {
             Err(crate::ErrorKind::HttpStatus(resp.status()).into())
@@ -337,8 +340,8 @@ mod test {
         };
     }
 
-    #[test]
-    fn test_oauth2_fetch_token() {
+    #[tokio::test]
+    async fn test_oauth2_fetch_token() {
         let token = oauth2::fetch_token(
             &format!("http://localhost:{}/oauth2/token", *PORT),
             &User {
@@ -347,6 +350,7 @@ mod test {
                 refresh_token: "xyz".into(),
             },
         )
+        .await
         .unwrap();
         assert_eq!(token.token, "abc");
         assert_eq!(token.type_, "Bearer");

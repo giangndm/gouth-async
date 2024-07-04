@@ -3,9 +3,10 @@
 //! # Example
 //! ```no_run
 //! use gouth::Token;
-//!
-//! let token = Token::new().unwrap();
-//! println!("authorization: {}", token.header_value().unwrap());
+//! async fn test() {
+//!     let token = Token::new().unwrap();
+//!     println!("authorization: {}", token.header_value().await.unwrap());
+//! }
 //! ```
 
 mod error;

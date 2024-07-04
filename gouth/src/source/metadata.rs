@@ -36,8 +36,9 @@ impl From<Metadata> for BoxSource {
     }
 }
 
+#[async_trait::async_trait]
 impl Source for Metadata {
-    fn token(&self) -> crate::Result<Token> {
+    async fn token(&self) -> crate::Result<Token> {
         if !gcemeta::on_gce() {
             panic!("must be running on Google Compute Engine.")
         }
@@ -68,9 +69,7 @@ mod test {
         let m = Metadata::new(Vec::new());
         assert_eq!(m.uri_suffix(), "instance/service-accounts/default/token?");
 
-        let m = Metadata::new(vec![
-            "https://www.googleapis.com/auth/cloud-platform".into(),
-        ]);
+        let m = Metadata::new(vec!["https://www.googleapis.com/auth/cloud-platform".into()]);
         assert_eq!(
             m.uri_suffix(),
             "instance/service-accounts/default/token?scopes=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform"
