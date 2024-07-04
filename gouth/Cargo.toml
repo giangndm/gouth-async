@@ -20,7 +20,6 @@ serde_json = { version = "1.0" }
 url = { version = "2.2" }
 jsonwebtoken = { version = "7" }
 tonic = { version = "0.4", default-features = false, optional = true }
-futures = "0.3"
 
 [dev-dependencies]
 lazy_static = "1.4"
